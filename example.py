@@ -37,11 +37,13 @@ STATUS_ICONS = {
 
 count = 0
 real_count = 0
+STATUS = STATUS_READY
 
 class Pos(QWidget):
     expandable = pyqtSignal(int, int)
     clicked = pyqtSignal()
     ohno = pyqtSignal()
+    restart = pyqtSignal(int, int)
 
     def __init__(self, x, y, *args, **kwargs):
         super(Pos, self).__init__(*args, **kwargs)
@@ -129,10 +131,15 @@ class Pos(QWidget):
                 real_count -= 1
 
         elif e.button() == Qt.LeftButton:
-            self.click()
-
-            if self.is_mine:
-                self.ohno.emit()
+            if STATUS != STATUS_PLAYING:
+                if not self.is_mine:
+                    self.click()
+                else:
+                    self.restart.emit(self.x, self.y)
+            else:
+                self.click()
+                if self.is_mine:
+                    self.ohno.emit()
 
 
 class MainWindow(QMainWindow):
@@ -228,6 +235,7 @@ class MainWindow(QMainWindow):
                 w.clicked.connect(self.trigger_start)
                 w.expandable.connect(self.expand_reveal)
                 w.ohno.connect(self.game_over)
+                w.restart.connect(self.restart)
 
     def reset_map(self):
         # Clear all mine positions
@@ -258,23 +266,6 @@ class MainWindow(QMainWindow):
             for y in range(0, self.b_size):
                 w = self.grid.itemAtPosition(y, x).widget()
                 w.adjacent_n = get_adjacency_n(x, y)
-
-        # Place starting marker
-        while True:
-            x, y = random.randint(0, self.b_size - 1), random.randint(
-                0, self.b_size - 1
-            )
-            w = self.grid.itemAtPosition(y, x).widget()
-            # We don't want to start on a mine.
-            if (x, y) not in positions:
-                w = self.grid.itemAtPosition(y, x).widget()
-                w.is_start = True
-
-                # Reveal all positions around this, if they are not mines either.
-                for w in self.get_surrounding(x, y):
-                    if not w.is_mine:
-                        w.click()
-                break
 
     def get_surrounding(self, x, y):
         positions = []
@@ -311,6 +302,21 @@ class MainWindow(QMainWindow):
                 w = self.grid.itemAtPosition(yi, xi).widget()
                 if not w.is_mine:
                     w.click()
+    
+    def restart(self, x, y):
+        while True:
+            flag = False
+            self.reset_map()
+            w = self.grid.itemAtPosition(y, x).widget()
+            if not w.is_mine:
+                for xi in range(max(0, x - 1), min(x + 2, self.b_size)):
+                    for yi in range(max(0, y - 1), min(y + 2, self.b_size)):
+                        w = self.grid.itemAtPosition(yi, xi).widget()
+                        if not w.is_mine:
+                            w.click()
+                            flag = True
+                if flag:
+                    break
 
     def trigger_start(self, *args):
         if self.status != STATUS_PLAYING:
@@ -320,6 +326,9 @@ class MainWindow(QMainWindow):
             self._timer_start_nsecs = int(time.time())
 
     def update_status(self, status):
+        global STATUS
+
+        STATUS = status
         self.status = status
         self.button.setIcon(QIcon(STATUS_ICONS[self.status]))
     
@@ -430,7 +439,7 @@ class MainWindow(QMainWindow):
         self.update_status(STATUS_FAILED)
     
     def win(self):
-        self.button.setIcon(QIcon())
+        self.button.setIcon(QIcon(STATUS_ICONS[STATUS_SUCCESS]))
         self.reveal_map()
 
 
